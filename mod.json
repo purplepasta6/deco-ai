@@ -8,16 +8,52 @@
 	},
 	"id": "purplepasta.deco-ai",
 	"name": "Deco AI",
-	"version": "v1.0.0",
+	"version": "v2.0.0",
 	"developer": "purplepasta",
-	"description": "Learns your decoration style and decorates whole sections of your level for you. Runs fully offline.",
+	"description": "Decorates your blocks the way creators do: clean outlines, corners, evenly spaced details. Fully offline.",
 	"tags": ["editor", "enhancement"],
 	"settings": {
+		"outlines": {
+			"name": "Outlines",
+			"description": "Tile the outline style along every exposed edge.",
+			"type": "bool",
+			"default": true
+		},
+		"corners": {
+			"name": "Corners",
+			"description": "Put corner pieces on outer corners.",
+			"type": "bool",
+			"default": true
+		},
+		"edge-details": {
+			"name": "Edge details",
+			"description": "Place details just inside the edges, evenly spaced.",
+			"type": "bool",
+			"default": true
+		},
+		"bottom-details": {
+			"name": "Details on undersides",
+			"description": "Also put edge details along the bottoms of blocks.",
+			"type": "bool",
+			"default": true
+		},
+		"interior": {
+			"name": "Interior details",
+			"description": "A few quiet details deep inside large block masses.",
+			"type": "bool",
+			"default": true
+		},
+		"large-pieces": {
+			"name": "Large pieces",
+			"description": "Big pieces, only where they fit completely inside the blocks.",
+			"type": "bool",
+			"default": true
+		},
 		"density": {
-			"name": "Density",
-			"description": "Chance (0 to 1) that each exposed edge gets decorated. Lower values look more natural and less repetitive.",
+			"name": "Detail density",
+			"description": "How busy edge details and interior details get. Outlines and corners are not affected.",
 			"type": "float",
-			"default": 0.85,
+			"default": 0.6,
 			"min": 0.0,
 			"max": 1.0,
 			"control": {
@@ -25,6 +61,12 @@
 				"slider-step": 0.05,
 				"input": true
 			}
+		},
+		"keep-groups": {
+			"name": "Keep group IDs",
+			"description": "Copy the group IDs of your example pieces onto generated deco. Off by default so generated deco isn't moved by your triggers.",
+			"type": "bool",
+			"default": false
 		},
 		"max-objects": {
 			"name": "Max objects per run",

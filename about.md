@@ -1,28 +1,42 @@
 # Deco AI
 
-Teach it your decoration style once, then decorate whole sections of a level in one click. Everything runs on your own computer: no API key, no internet.
+Decorates your blocks the way creators do it: one clean outline style along every edge, caps on the corners, evenly spaced details just inside the edges, and a few quiet details inside big block masses. Everything runs on your own computer: no API key, no internet.
 
-## Two ways to teach it
+## Teach it your style
 
-**Palette (easiest):** drop a handful of deco pieces anywhere in the editor, loose and unarranged. Select them and press **Palette**. The mod sorts each piece by its shape:
+**Learn (best results):** decorate **one block** exactly how you want every block to look. Use an outline on top, a glow, a corner cap, a small detail near the edge, anything. Select the block **and** its deco, then press **Learn**. Deco AI reads where each piece sits:
 
-- **Long, thin pieces** become outlines. They're tiled along every exposed edge, rotated to face outward, and the mod picks whichever piece length fits each stretch of edge most evenly.
-- **Medium pieces** go on outer corners. Draw them for the top-left corner and they're rotated for the other three.
-- **Small pieces** are sprinkled across block faces, mostly near the surface.
-- **Big pieces** become set pieces standing on longer platforms, spaced apart.
+- Pieces lying **along an edge** become outlines. Layered outline + glow combos are kept together.
+- Pieces **on a corner** become corner caps.
+- Pieces **just inside an edge** become edge details.
+- Pieces **deep inside** become interior details.
 
-**Learn (most control):** decorate a block by hand exactly how you want it, select the block *and* its deco, and press **Learn**. It copies that arrangement onto every block.
+A side you didn't decorate copies its opposite side, so the style stays symmetric. Learning again replaces the old style.
 
-You can use both together. Learned styles take priority, and the palette fills whatever they don't cover.
+**Palette (quick):** select loose deco pieces anywhere and press **Palette**. It sorts them by shape:
 
-## Decorating
+- Long, thin pieces become outlines.
+- Small pieces become details.
+- Medium pieces become edge details.
+- Big pieces become large pieces.
 
-1. Select the plain blocks you want decorated and press **Deco!**
-2. Not happy? Press **Undo** to remove the last batch. **Forget** clears everything it has learned.
+Place outline pieces the way they'd look on the **top** of a block.
 
-## How it decides
+## Decorate
 
-- It checks which sides of each block are open air (using the whole level, not only your selection), so top outlines only go on surfaces you can see and corner pieces only go on real corners.
-- With several samples learned, it picks a random one per edge, which keeps long sections from looking copy-pasted.
-- Colours, layers, Z order, scale, rotation and groups of your example pieces are all kept.
-- The **Density** setting controls how often an edge is decorated.
+Select the blocks you want decorated and press **Deco!** One undo (Ctrl+Z or the editor's undo button) removes the whole run.
+
+## What it will never do
+
+- Use or place spikes, orbs, pads, portals, coins or triggers. Only decoration objects are used.
+- Put pieces in the open air where you play. Only outlines sit on the edge itself.
+- Cover orbs, pads or portals, or put details on top of spikes.
+- Decorate the border between selected and unselected blocks. Only real, visible edges count.
+- Stack duplicates when you press Deco! again.
+- Copy your example's group IDs, unless you turn on *Keep group IDs*, so your triggers won't move the generated deco.
+
+## Settings
+
+Turn outlines, corners, edge details, details on undersides, interior details and large pieces on or off individually. **Detail density** sets how busy the details get.
+
+**Kit** shows what it has learned and lets you start over.
