@@ -1,0 +1,39 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "clang-gnu",
+      "pattern": [
+        {
+          "regexp": "^(?:\\.\\./)*([^\\s:(][^:(]*):(\\d+):(\\d+):\\s+(?:fatal\\s+)?(error):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      ]
+    },
+    {
+      "owner": "clang-msvc",
+      "pattern": [
+        {
+          "regexp": "^(.+?)\\((\\d+),(\\d+)\\):\\s+(?:fatal\\s+)?(error)(?:\\s+[A-Z]+\\d+)?:\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      ]
+    },
+    {
+      "owner": "cmake-error",
+      "pattern": [
+        {
+          "regexp": "^(CMake Error.*)$",
+          "message": 1
+        }
+      ]
+    }
+  ]
+}

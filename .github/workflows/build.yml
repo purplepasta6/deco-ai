@@ -14,11 +14,6 @@ jobs:
         config:
           - name: Windows
             os: windows-latest
-          - name: macOS
-            os: macos-latest
-          - name: Android32
-            os: ubuntu-latest
-            target: Android32
           - name: Android64
             os: ubuntu-latest
             target: Android64
@@ -29,11 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Report compiler errors as annotations
+        shell: bash
+        run: echo "::add-matcher::.github/problem-matchers.json"
+
       - name: Build the mod
         uses: geode-sdk/build-geode-mod@main
         with:
-          bindings: geode-sdk/bindings
-          bindings-ref: main
           combine: true
           target: ${{ matrix.config.target }}
 
