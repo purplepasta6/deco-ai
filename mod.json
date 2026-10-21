@@ -1,0 +1,38 @@
+{
+	"geode": "5.0.0",
+	"gd": {
+		"win": "2.2081",
+		"android": "2.2081",
+		"mac": "2.2081",
+		"ios": "2.2081"
+	},
+	"id": "purplepasta.deco-ai",
+	"name": "Deco AI",
+	"version": "v1.0.0",
+	"developer": "purplepasta",
+	"description": "Learns your decoration style and decorates whole sections of your level for you. Runs fully offline.",
+	"tags": ["editor", "enhancement"],
+	"settings": {
+		"density": {
+			"name": "Density",
+			"description": "Chance (0 to 1) that each exposed edge gets decorated. Lower values look more natural and less repetitive.",
+			"type": "float",
+			"default": 0.85,
+			"min": 0.0,
+			"max": 1.0,
+			"control": {
+				"slider": true,
+				"slider-step": 0.05,
+				"input": true
+			}
+		},
+		"max-objects": {
+			"name": "Max objects per run",
+			"description": "Safety cap on how many objects one press of Deco! can place.",
+			"type": "int",
+			"default": 5000,
+			"min": 100,
+			"max": 80000
+		}
+	}
+}
