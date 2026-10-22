@@ -46,6 +46,48 @@ std::string itemKey(Item const& it) {
 
 } // namespace
 
+bool Channel::sameAs(Channel const& o) const {
+    auto close = [](double a, double b) { return std::abs(a - b) < 1e-3; };
+    if (copyID != o.copyID || blending != o.blending || playerColor != o.playerColor) return false;
+    if (!close(opacity, o.opacity)) return false;
+    if (copyID > 0) {
+        return close(h, o.h) && close(s, o.s) && close(v, o.v) && absS == o.absS && absV == o.absV &&
+               copyOpacity == o.copyOpacity;
+    }
+    return r == o.r && g == o.g && b == o.b;
+}
+
+std::vector<int> channelsUsed(std::string const& saveString) {
+    std::vector<int> out;
+    auto parts = split(saveString, ',');
+    for (size_t i = 0; i + 1 < parts.size(); i += 2) {
+        if (parts[i] != "21" && parts[i] != "22") continue;
+        try {
+            int c = std::stoi(parts[i + 1]);
+            if (c >= 1 && c <= 999 && std::find(out.begin(), out.end(), c) == out.end()) out.push_back(c);
+        } catch (...) {}
+    }
+    return out;
+}
+
+std::string remapChannels(std::string const& saveString, std::map<int, int> const& map) {
+    if (map.empty()) return saveString;
+    auto parts = split(saveString, ',');
+    for (size_t i = 0; i + 1 < parts.size(); i += 2) {
+        if (parts[i] != "21" && parts[i] != "22") continue;
+        try {
+            auto it = map.find(std::stoi(parts[i + 1]));
+            if (it != map.end()) parts[i + 1] = std::to_string(it->second);
+        } catch (...) {}
+    }
+    std::string out;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (i) out += ',';
+        out += parts[i];
+    }
+    return out;
+}
+
 std::string cleanName(std::string s) {
     for (auto& c : s)
         if (c == '\t' || c == '\n' || c == '\r') c = ' ';
@@ -71,6 +113,10 @@ std::string Style::summary() const {
     if (loose) {
         if (!s.empty()) s += ", ";
         s += std::to_string(loose) + " palette";
+    }
+    if (!colors.empty()) {
+        if (!s.empty()) s += ", ";
+        s += std::to_string(colors.size()) + " colour" + (colors.size() == 1 ? "" : "s");
     }
     std::set<std::string> kinds;
     for (auto const& [id, tpl] : anchors) kinds.insert(anchorClassName(tpl.cls));
@@ -122,6 +168,13 @@ std::string Library::serialize() const {
                    (it.autoOffset ? "1" : "0") + "\t" + num(it.offX) + "\t" + num(it.offY) + "\t" +
                    std::to_string(it.kit) + "\t" + std::to_string(it.seq) + "\t" + std::to_string(it.objectID) +
                    "\t" + std::to_string(it.zOrder0) + "\t" + it.saveString + "\n";
+        }
+        for (auto const& [id, c] : s.colors) {
+            out += "C\t" + std::to_string(c.id) + "\t" + std::to_string(c.r) + "\t" + std::to_string(c.g) + "\t" +
+                   std::to_string(c.b) + "\t" + num(c.opacity) + "\t" + (c.blending ? "1" : "0") + "\t" +
+                   std::to_string(c.copyID) + "\t" + num(c.h) + "\t" + num(c.s) + "\t" + num(c.v) + "\t" +
+                   (c.absS ? "1" : "0") + "\t" + (c.absV ? "1" : "0") + "\t" + (c.copyOpacity ? "1" : "0") +
+                   "\t" + std::to_string(c.playerColor) + "\n";
         }
         for (auto const& [id, tpl] : s.anchors) {
             out += "A\t" + std::to_string(tpl.objectID) + "\t" + std::to_string(static_cast<int>(tpl.cls)) + "\t" +
@@ -183,6 +236,24 @@ Library Library::deserialize(std::string const& data) {
                 it.saveString = f[16];
                 if (it.saveString.empty() || it.bw <= 0 || it.bh <= 0) continue;
                 style->items.push_back(std::move(it));
+            } else if (f[0] == "C" && f.size() >= 15 && style) {
+                Channel c;
+                c.id = toI(f[1]);
+                if (c.id < 1 || c.id > 999) continue;
+                c.r = std::clamp(toI(f[2]), 0, 255);
+                c.g = std::clamp(toI(f[3]), 0, 255);
+                c.b = std::clamp(toI(f[4]), 0, 255);
+                c.opacity = std::clamp(toD(f[5]), 0.0, 1.0);
+                c.blending = f[6] == "1";
+                c.copyID = toI(f[7]);
+                c.h = toD(f[8]);
+                c.s = toD(f[9]);
+                c.v = toD(f[10]);
+                c.absS = f[11] == "1";
+                c.absV = f[12] == "1";
+                c.copyOpacity = f[13] == "1";
+                c.playerColor = toI(f[14]);
+                style->colors[c.id] = c;
             } else if (f[0] == "A" && f.size() >= 5 && style) {
                 AnchorTemplate t;
                 t.objectID = toI(f[1]);

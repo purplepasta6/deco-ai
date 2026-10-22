@@ -248,6 +248,87 @@ CCPoint saveOffset(GameObject* o, LevelEditorLayer* layer) {
     return {hx ? static_cast<float>(p.x - sx) : 0.f, hy ? static_cast<float>(p.y - sy) : 0.f};
 }
 
+// ================================================================ colour channels
+
+// The level's own colour settings (what gets saved with the level) and the
+// editor's live copy (what you see). Usually the same object; handled if not.
+std::vector<GJEffectManager*> colorManagers(LevelEditorLayer* layer) {
+    std::vector<GJEffectManager*> out;
+    if (layer->m_levelSettings && layer->m_levelSettings->m_effectManager)
+        out.push_back(layer->m_levelSettings->m_effectManager);
+    if (layer->m_effectManager && (out.empty() || out[0] != layer->m_effectManager))
+        out.push_back(layer->m_effectManager);
+    return out;
+}
+
+deco::Channel readChannel(GJEffectManager* em, int id) {
+    deco::Channel c;
+    c.id = id;
+    if (!em || !em->colorExists(id)) return c; // never set: default white
+    auto a = em->getColorAction(id);
+    if (!a) return c;
+    c.r = a->m_fromColor.r;
+    c.g = a->m_fromColor.g;
+    c.b = a->m_fromColor.b;
+    c.opacity = a->m_fromOpacity;
+    c.blending = a->m_blending;
+    c.copyID = a->m_copyID;
+    c.h = a->m_copyHSV.h;
+    c.s = a->m_copyHSV.s;
+    c.v = a->m_copyHSV.v;
+    c.absS = a->m_copyHSV.absoluteSaturation;
+    c.absV = a->m_copyHSV.absoluteBrightness;
+    c.copyOpacity = a->m_copyOpacity;
+    c.playerColor = a->m_playerColor;
+    return c;
+}
+
+bool channelInUse(deco::Channel const& c) {
+    return c.r != 255 || c.g != 255 || c.b != 255 || std::abs(c.opacity - 1.0) > 1e-3 || c.copyID != 0 ||
+           c.blending || c.playerColor > 0;
+}
+
+void writeChannel(LevelEditorLayer* layer, int id, deco::Channel const& c) {
+    for (auto em : colorManagers(layer)) {
+        auto a = em->getColorAction(id);
+        if (!a) continue;
+        ccColor3B col{static_cast<GLubyte>(c.r), static_cast<GLubyte>(c.g), static_cast<GLubyte>(c.b)};
+        a->m_fromColor = col;
+        a->m_toColor = col;
+        a->m_color = col;
+        a->m_fromOpacity = static_cast<float>(c.opacity);
+        a->m_toOpacity = static_cast<float>(c.opacity);
+        a->m_currentOpacity = static_cast<float>(c.opacity);
+        a->m_blending = c.blending;
+        a->m_copyID = c.copyID;
+        a->m_copyHSV = cchsv(static_cast<float>(c.h), static_cast<float>(c.s), static_cast<float>(c.v), c.absS, c.absV);
+        a->m_copyOpacity = c.copyOpacity;
+        a->m_playerColor = c.playerColor;
+        a->m_legacyHSV = false;
+        em->colorActionChanged(a);
+        if (a->m_colorSprite) em->updateColorAction(a);
+    }
+}
+
+// Captures the settings of every colour channel the given save strings use,
+// following copy-colour links so the whole chain comes along.
+void learnChannels(LevelEditorLayer* layer, std::vector<std::string> const& saveStrings, deco::Style& style) {
+    auto mgrs = colorManagers(layer);
+    if (mgrs.empty()) return;
+    std::vector<int> todo;
+    for (auto const& str : saveStrings)
+        for (int c : deco::channelsUsed(str)) todo.push_back(c);
+    std::set<int> done;
+    while (!todo.empty()) {
+        int id = todo.back();
+        todo.pop_back();
+        if (id < 1 || id > 999 || !done.insert(id).second) continue;
+        auto c = readChannel(mgrs[0], id);
+        style.colors[id] = c;
+        if (c.copyID >= 1 && c.copyID <= 999) todo.push_back(c.copyID);
+    }
+}
+
 // ================================================================ library storage
 
 deco::Library g_lib;
@@ -769,6 +850,14 @@ class $modify(DecoEditorUI, EditorUI) {
             return;
         }
 
+        {
+            std::vector<std::string> strs;
+            for (auto const& it : learnedItems) strs.push_back(it.saveString);
+            for (auto const& [id, tpl] : style.anchors)
+                for (auto const& v : tpl.variants)
+                    for (auto const& p : v.pieces) strs.push_back(p.saveString);
+            learnChannels(m_editorLayer, strs, style);
+        }
         saveLibrary();
         log::info("[deco] learned into style {} ({}): {} block pieces from {} blocks, {} anchor templates",
             styleId, style.name, learnedItems.size(), blockExamples, fresh.size());
@@ -777,6 +866,7 @@ class $modify(DecoEditorUI, EditorUI) {
         if (!learnedItems.empty())
             body += fmt::format("<cg>Blocks</c> ({} example(s)): {}\n", blockExamples, style.summary());
         for (auto const& l : anchorLines) body += "<cl>" + l + "</c>\n";
+        if (!style.colors.empty()) body += fmt::format("<cp>{} colour channel(s)</c> saved with the style.\n", style.colors.size());
         if (air) body += fmt::format("<co>{} floating piece(s) skipped</c> (too far from any object).\n", air);
         if (triggers) body += fmt::format("<co>{} trigger(s) ignored.</c>\n", triggers);
 
@@ -838,6 +928,12 @@ class $modify(DecoEditorUI, EditorUI) {
             if (extra.empty()) notify("Select some deco pieces first", NotificationIcon::Error);
             else showInfo("Nothing added", "Only pieces without collision can go in the palette." + extra);
             return;
+        }
+        {
+            std::vector<std::string> strs;
+            for (auto const& it : style.items)
+                if (it.kit == 0) strs.push_back(it.saveString);
+            learnChannels(m_editorLayer, strs, style);
         }
         saveLibrary();
         showInfo("Added to palette",
@@ -916,9 +1012,72 @@ class $modify(DecoEditorUI, EditorUI) {
         bool keepGroups = mod->getSettingValue<bool>("keep-groups");
         int cap = in.settings.maxObjects;
 
+        // Colour channels: bring the style's colours into this level. A channel
+        // that is free (or already identical) is used as is; one that your level
+        // already uses for something else is moved to a free channel instead.
+        std::map<int, int> chanMap;
+        int colorsSet = 0, colorsMoved = 0;
+        bool colorsReady = false;
+        auto prepareColors = [&]() {
+            if (colorsReady) return;
+            colorsReady = true;
+            if (style.colors.empty()) return;
+            auto mgrs = colorManagers(m_editorLayer);
+            if (mgrs.empty()) return;
+            auto em = mgrs[0];
+            std::set<int> used;
+            for (auto o : CCArrayExt<GameObject*>(m_editorLayer->m_objects)) {
+                if (o->m_baseColor) used.insert(o->m_baseColor->m_colorID);
+                if (o->m_detailColor) used.insert(o->m_detailColor->m_colorID);
+                if (o->m_isColorTrigger) used.insert(o->m_targetColor);
+            }
+            std::set<int> allocated;
+            auto isFree = [&](int d) {
+                return !used.count(d) && !allocated.count(d) && !channelInUse(readChannel(em, d));
+            };
+            std::function<int(int, int)> resolve = [&](int c, int depth) -> int {
+                if (auto it = chanMap.find(c); it != chanMap.end()) return it->second;
+                auto want = style.colors.find(c);
+                if (want == style.colors.end() || depth > 8) return c;
+                deco::Channel w = want->second;
+                if (w.copyID >= 1 && w.copyID <= 999) w.copyID = resolve(w.copyID, depth + 1);
+                int target = -1;
+                auto cur = readChannel(em, c);
+                if (cur.sameAs(w)) {
+                    target = c;
+                } else if (isFree(c)) {
+                    writeChannel(m_editorLayer, c, w);
+                    colorsSet++;
+                    target = c;
+                } else {
+                    for (int d = 1; d <= 999 && target < 0; ++d) {
+                        if (d == c || !em->colorExists(d)) continue;
+                        if (readChannel(em, d).sameAs(w) && channelInUse(w)) target = d;
+                    }
+                    for (int d = 1; d <= 999 && target < 0; ++d) {
+                        if (isFree(d)) {
+                            writeChannel(m_editorLayer, d, w);
+                            colorsSet++;
+                            colorsMoved++;
+                            target = d;
+                        }
+                    }
+                }
+                if (target < 0) target = c; // no free channel left: keep it as is
+                allocated.insert(target);
+                chanMap[c] = target;
+                return target;
+            };
+            for (auto const& [id, ch] : style.colors) resolve(id, 0);
+            if (colorsSet) m_editorLayer->updateLevelColors();
+            log::info("[deco] colours: {} set, {} moved to free channels, map size {}", colorsSet, colorsMoved, chanMap.size());
+        };
+
         auto offset = saveOffset(reference, m_editorLayer);
         auto created = CCArray::create();
-        auto spawn = [&](std::string const& str, double scale) -> GameObject* {
+        auto spawn = [&](std::string const& raw, double scale) -> GameObject* {
+            prepareColors();
+            auto str = deco::remapChannels(raw, chanMap);
             auto arr = m_editorLayer->createObjectsFromString(gd::string(str), true, true);
             if (!arr || arr->count() == 0) return nullptr;
             auto obj = static_cast<GameObject*>(arr->objectAtIndex(0));
@@ -1039,6 +1198,8 @@ class $modify(DecoEditorUI, EditorUI) {
         add(st.interior, "detail");
         for (auto const& [k, n] : aroundCounts) add(n, "around " + k);
         std::string msg = fmt::format("Placed {} ({}). Undo removes it all.", created->count(), parts);
+        if (colorsSet) msg += fmt::format(" Set up {} colour channel(s){}.", colorsSet,
+            colorsMoved ? fmt::format(", {} moved to free channels", colorsMoved) : std::string());
         if (!missing.empty()) {
             std::string m;
             for (auto const& s : missing) m += (m.empty() ? "" : ", ") + s;

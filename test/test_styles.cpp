@@ -34,6 +34,18 @@ int main() {
     TPiece p{1764, 0.5, -3.25, 90, true, 30, 8, "1,1764,2,0,3,0,24,-1"};
     addVariants(tpl, {{p}, {p}});
     a.anchors[8] = tpl;
+    Channel ch;
+    ch.id = 12;
+    ch.r = 10; ch.g = 200; ch.b = 255;
+    ch.opacity = 0.5;
+    ch.blending = true;
+    a.colors[12] = ch;
+    Channel cp;
+    cp.id = 13;
+    cp.copyID = 12;
+    cp.v = -0.25;
+    cp.absV = true;
+    a.colors[13] = cp;
     int aId = a.id;
     int bId = lib.create("").id; // invalidates `a`
     CHECK(lib.find(bId)->name == "Style 2", "default name");
@@ -56,7 +68,18 @@ int main() {
         CHECK(q.objectID == 1764 && q.lmirror && std::abs(q.dy + 3.25) < 1e-6 && q.saveString == p.saveString,
               "piece kept");
     }
+    CHECK(s && s->colors.size() == 2 && s->colors.at(12).sameAs(ch) && s->colors.at(13).sameAs(cp) &&
+          s->colors.at(12).g == 200 && s->colors.at(13).copyID == 12, "colours kept");
     CHECK(Library::deserialize(back.serialize()).serialize() == back.serialize(), "stable round trip");
+
+    // Channel helpers.
+    auto used = channelsUsed("1,211,2,15,3,30,21,12,22,1004,25,3");
+    CHECK(used.size() == 1 && used[0] == 12, "channelsUsed skips special channels");
+    CHECK(remapChannels("1,211,21,12,22,13,2,5", {{12, 40}, {13, 41}}) == "1,211,21,40,22,41,2,5", "remap");
+    CHECK(remapChannels("1,211,21,7", {{12, 40}}) == "1,211,21,7", "remap leaves others");
+    Channel otherCh = ch;
+    otherCh.r = 11;
+    CHECK(!otherCh.sameAs(ch), "sameAs detects colour change");
 
     // Garbage in, no crash, nothing bogus out.
     Library junk = Library::deserialize("S\tx\nI\t9\nP\t1\nA\t\t\nrandom\n\n");
