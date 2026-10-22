@@ -25,7 +25,15 @@ bool isSolidLike(GameObject* o) {
 }
 
 bool isTargetBlock(GameObject* o) {
-    return o->m_objectType == GameObjectType::Solid;
+    if (o->m_objectType != GameObjectType::Solid) return false;
+    // Thin solid pieces (outline-tab lines and similar) are not blocks to decorate.
+    auto r = o->getObjectRect();
+    return std::min(r.size.width, r.size.height) >= 7.f;
+}
+
+// Solid but too thin to be a block: these have collision, so they're never deco.
+bool isThinSolid(GameObject* o) {
+    return o->m_objectType == GameObjectType::Solid && !isTargetBlock(o);
 }
 
 // Pure decoration only: never spikes, orbs, pads, portals, coins or triggers.
@@ -247,22 +255,39 @@ class $modify(DecoEditorUI, EditorUI) {
         auto win = CCDirector::get()->getWinSize();
         auto menu = CCMenu::create();
         menu->setID("deco-ai-menu"_spr);
-        menu->setPosition({win.width - 30.f, win.height / 2.f + 60.f});
+        // A row just under the top bar, centred on the position slider when it can be found,
+        // so it never covers the editor's own buttons.
+        float cx = win.width / 2.f, cy = win.height - 48.f;
+        if (auto slider = this->getChildByID("position-slider")) {
+            auto box = slider->boundingBox();
+            cx = box.getMidX();
+            cy = box.getMinY() - 14.f;
+        }
+        menu->setPosition({cx, cy});
 
-        float y = 0.f;
+        std::vector<CCMenuItemSpriteExtra*> buttons;
         auto addButton = [&](char const* label, SEL_MenuHandler handler, char const* id) {
             auto spr = ButtonSprite::create(label, "goldFont.fnt", "GJ_button_04.png", 0.8f);
-            spr->setScale(0.45f);
+            spr->setScale(0.42f);
             auto btn = CCMenuItemSpriteExtra::create(spr, this, handler);
             btn->setID(id);
-            btn->setPosition({0.f, y});
             menu->addChild(btn);
-            y -= 21.f;
+            buttons.push_back(btn);
         };
         addButton("Learn", menu_selector(DecoEditorUI::onDecoLearn), "learn-button"_spr);
         addButton("Palette", menu_selector(DecoEditorUI::onDecoPalette), "palette-button"_spr);
         addButton("Deco!", menu_selector(DecoEditorUI::onDecoApply), "deco-button"_spr);
         addButton("Kit", menu_selector(DecoEditorUI::onDecoKit), "kit-button"_spr);
+
+        float total = 0.f, gap = 4.f;
+        for (auto b : buttons) total += b->getScaledContentSize().width;
+        total += gap * (buttons.size() - 1);
+        float x = -total / 2.f;
+        for (auto b : buttons) {
+            float w = b->getScaledContentSize().width;
+            b->setPosition({x + w / 2.f, 0.f});
+            x += w + gap;
+        }
 
         this->addChild(menu, 100);
         m_fields->menu = menu;
@@ -287,14 +312,29 @@ class $modify(DecoEditorUI, EditorUI) {
 
     void onDecoLearn(CCObject*) {
         std::vector<GameObject*> blocks, decos;
-        int ignored = 0;
+        int collision = 0, gameplay = 0;
         for (auto o : selection()) {
             if (isTargetBlock(o)) blocks.push_back(o);
             else if (isDeco(o)) decos.push_back(o);
-            else ignored++;
+            else if (isThinSolid(o) || o->m_objectType == GameObjectType::Slope) collision++;
+            else gameplay++;
         }
         if (blocks.empty() || decos.empty()) {
-            notify("Select a decorated example block AND its deco, then press Learn", NotificationIcon::Error);
+            std::string seen = fmt::format(
+                "You selected: <cg>{} block(s)</c>, <cy>{} deco piece(s)</c>", blocks.size(), decos.size());
+            if (collision) seen += fmt::format(", <cr>{} piece(s) with collision</c>", collision);
+            if (gameplay) seen += fmt::format(", <cr>{} gameplay object(s)</c>", gameplay);
+            std::string why;
+            if (blocks.empty()) {
+                why = "Include the example block itself in the selection.";
+            } else if (collision) {
+                why = "Pieces with collision (like the lines in the outline tab) count as part of the "
+                      "level, so they can't be learned. Use pieces without collision: glow, details, "
+                      "deco lines.";
+            } else {
+                why = "Also select the deco you placed on and around the block.";
+            }
+            createQuickPopup("Nothing to learn", seen + ".\n\n" + why, "OK", nullptr, [](FLAlertLayer*, bool) {});
             return;
         }
 
@@ -334,16 +374,21 @@ class $modify(DecoEditorUI, EditorUI) {
 
         std::string extra;
         if (air) extra += fmt::format("\n<co>{} floating piece(s) skipped</c> (too far from the block).", air);
-        if (ignored) extra += fmt::format("\n<co>{} gameplay object(s) ignored</c> (spikes, orbs, pads...).", ignored);
+        if (collision) extra += fmt::format("\n<co>{} piece(s) with collision skipped</c> (they'd change gameplay).", collision);
+        if (gameplay) extra += fmt::format("\n<co>{} gameplay object(s) ignored</c> (spikes, orbs, pads...).", gameplay);
         createQuickPopup("Style learned", kitSummary() + extra, "OK", nullptr, [](FLAlertLayer*, bool) {});
     }
 
     // ------------------------------------------------------------ Palette
 
     void onDecoPalette(CCObject*) {
-        int added = 0, ignored = 0;
+        int added = 0, ignored = 0, collision = 0;
         for (auto o : selection()) {
-            if (!isDeco(o)) { ignored++; continue; }
+            if (!isDeco(o)) {
+                if (o->m_objectType == GameObjectType::Solid || o->m_objectType == GameObjectType::Slope) collision++;
+                else ignored++;
+                continue;
+            }
             auto m = measure(o);
             deco::Item it = deco::classifyLoose(m.bw, m.bh, m.rot);
             fillCommon(it, o, m_editorLayer);
@@ -351,16 +396,20 @@ class $modify(DecoEditorUI, EditorUI) {
             g_items.push_back(std::move(it));
             added++;
         }
+        std::string extra;
+        if (collision) extra += fmt::format("\n<co>{} piece(s) with collision skipped</c> (blocks, outline-tab lines...).", collision);
+        if (ignored) extra += fmt::format("\n<co>{} gameplay object(s) skipped</c> (spikes, orbs, pads...).", ignored);
         if (!added) {
-            notify(ignored ? "Only decoration can go in the palette (no spikes, orbs, blocks...)"
-                           : "Select some deco pieces first",
-                NotificationIcon::Error);
+            if (extra.empty()) {
+                notify("Select some deco pieces first", NotificationIcon::Error);
+            } else {
+                createQuickPopup("Nothing added",
+                    "Only pieces without collision can go in the palette." + extra, "OK", nullptr,
+                    [](FLAlertLayer*, bool) {});
+            }
             return;
         }
         save();
-        std::string extra = ignored
-            ? fmt::format("\n<co>{} non-decoration object(s) ignored.</c>", ignored)
-            : std::string();
         createQuickPopup("Added to palette", fmt::format("Added {} piece(s).\n\n", added) + kitSummary() + extra,
             "OK", nullptr, [](FLAlertLayer*, bool) {});
     }
