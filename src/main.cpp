@@ -372,6 +372,14 @@ class $modify(DecoEditorUI, EditorUI) {
             }
             fillCommon(it, d, m_editorLayer);
             it.kit = kit;
+            {
+                auto br = best->getObjectRect();
+                log::info("[deco] learn id {} role {} side {} bw {:.2f} bh {:.2f} rot {:.1f} c=({:.2f},{:.2f}) "
+                          "block ({:.2f},{:.2f})-({:.2f},{:.2f}) normalOff {:.2f} off=({:.2f},{:.2f}) str {}",
+                    it.objectID, deco::roleName(it.role), it.designed, it.bw, it.bh, it.rot0, m.cx, m.cy,
+                    br.getMinX(), br.getMinY(), br.getMaxX(), br.getMaxY(), it.normalOffset, it.offX, it.offY,
+                    it.saveString);
+            }
             learned.push_back(std::move(it));
         }
         if (learned.empty()) {
@@ -473,6 +481,12 @@ class $modify(DecoEditorUI, EditorUI) {
         in.settings.maxObjects = static_cast<int>(mod->getSettingValue<int64_t>("max-objects"));
         bool keepGroups = mod->getSettingValue<bool>("keep-groups");
 
+        for (size_t i = 0; i < in.items.size() && i < 12; ++i) {
+            auto const& it = in.items[i];
+            log::info("[deco] item {} kit {} role {} side {} bw {:.2f} bh {:.2f} rot {:.1f} longX {} normalOff {:.2f} auto {} str {}",
+                i, it.kit, deco::roleName(it.role), it.designed, it.bw, it.bh, it.rot0, it.longIsLocalX,
+                it.normalOffset, it.autoOffset, it.saveString);
+        }
         auto result = deco::generate(in);
         if (result.placements.empty()) {
             notify(result.stats.skippedDuplicate ? "Already decorated: nothing new to add"
@@ -482,6 +496,13 @@ class $modify(DecoEditorUI, EditorUI) {
         }
 
         auto offset = saveOffset(reference, m_editorLayer);
+        log::info("[deco] save offset ({:.2f}, {:.2f}), {} targets, {} placements",
+            offset.x, offset.y, in.targets.size(), result.placements.size());
+        for (size_t i = 0; i < in.targets.size() && i < 20; ++i) {
+            auto const& t = in.targets[i];
+            log::info("[deco] target {} rect ({:.2f},{:.2f})-({:.2f},{:.2f})", i, t.x0, t.y0, t.x1, t.y1);
+        }
+        int logged = 0;
         auto created = CCArray::create();
         for (auto const& p : result.placements) {
             auto const& it = in.items[p.item];
@@ -492,6 +513,15 @@ class $modify(DecoEditorUI, EditorUI) {
             if (std::abs(p.scaleLong - 1.0) > 0.005) {
                 if (it.longIsLocalX) obj->updateCustomScaleX(obj->m_scaleX * static_cast<float>(p.scaleLong));
                 else obj->updateCustomScaleY(obj->m_scaleY * static_cast<float>(p.scaleLong));
+            }
+            if (logged++ < 40) {
+                auto bb = obj->boundingBox();
+                auto pos = obj->getPosition();
+                log::info("[deco] {} want c=({:.2f},{:.2f}) rot+{:.0f} scale {:.3f} box ({:.2f},{:.2f})-({:.2f},{:.2f}) | "
+                          "got pos=({:.2f},{:.2f}) rot={:.1f} sx={:.3f} sy={:.3f} box ({:.2f},{:.2f})-({:.2f},{:.2f})",
+                    deco::roleName(it.role), p.x, p.y, p.rotDelta, p.scaleLong, p.bbox.x0, p.bbox.y0, p.bbox.x1, p.bbox.y1,
+                    pos.x, pos.y, obj->getRotation(), obj->m_scaleX, obj->m_scaleY,
+                    bb.getMinX(), bb.getMinY(), bb.getMaxX(), bb.getMaxY());
             }
             created->addObjectsFromArray(arr);
         }
