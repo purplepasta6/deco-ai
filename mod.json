@@ -8,7 +8,7 @@
 	},
 	"id": "purplepasta.deco-ai",
 	"name": "Deco AI",
-	"version": "v2.1.3",
+	"version": "v3.0.0",
 	"developer": "purplepasta",
 	"description": "Decorates your blocks the way creators do: clean outlines, corners, evenly spaced details. Fully offline.",
 	"tags": ["editor", "enhancement"],

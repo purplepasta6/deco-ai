@@ -9,6 +9,8 @@ project(DecoAI VERSION 1.0.0)
 add_library(${PROJECT_NAME} SHARED
     src/main.cpp
     src/engine.cpp
+    src/templates.cpp
+    src/styles.cpp
 )
 
 if (NOT DEFINED ENV{GEODE_SDK})
