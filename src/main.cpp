@@ -255,14 +255,9 @@ class $modify(DecoEditorUI, EditorUI) {
         auto win = CCDirector::get()->getWinSize();
         auto menu = CCMenu::create();
         menu->setID("deco-ai-menu"_spr);
-        // A row just under the top bar, centred on the position slider when it can be found,
-        // so it never covers the editor's own buttons.
-        float cx = win.width / 2.f, cy = win.height - 48.f;
-        if (auto slider = this->getChildByID("position-slider")) {
-            auto box = slider->boundingBox();
-            cx = box.getMidX();
-            cy = box.getMinY() - 14.f;
-        }
+        // A row just under the top bar, between the undo/zoom buttons on the left and
+        // the edit buttons on the right, so it never covers the editor's own UI.
+        float cx = win.width * 0.56f, cy = win.height - 44.f;
         menu->setPosition({cx, cy});
 
         std::vector<CCMenuItemSpriteExtra*> buttons;
