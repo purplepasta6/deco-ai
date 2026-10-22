@@ -235,6 +235,23 @@ void fillCommon(deco::Item& it, GameObject* o, LevelEditorLayer* layer) {
     it.seq = g_nextSeq++;
 }
 
+// Offset between where an object sits in the editor and the position written in
+// its save string (GD stores Y relative to the ground, among other quirks).
+// Measured from a real object instead of hard-coded, so it is always right.
+CCPoint saveOffset(GameObject* o, LevelEditorLayer* layer) {
+    auto parts = split(clean(std::string(o->getSaveString(layer))), ',');
+    double sx = 0, sy = 0;
+    bool hx = false, hy = false;
+    for (size_t i = 0; i + 1 < parts.size(); i += 2) {
+        try {
+            if (parts[i] == "2") { sx = std::stod(parts[i + 1]); hx = true; }
+            else if (parts[i] == "3") { sy = std::stod(parts[i + 1]); hy = true; }
+        } catch (...) {}
+    }
+    auto p = o->getPosition();
+    return {hx ? static_cast<float>(p.x - sx) : 0.f, hy ? static_cast<float>(p.y - sy) : 0.f};
+}
+
 void notify(std::string const& text, NotificationIcon icon) {
     Notification::create(text, icon)->show();
 }
@@ -418,8 +435,12 @@ class $modify(DecoEditorUI, EditorUI) {
         }
 
         deco::Input in;
-        for (auto o : selection())
-            if (isTargetBlock(o)) in.targets.push_back(toRect(o->getObjectRect()));
+        GameObject* reference = nullptr;
+        for (auto o : selection()) {
+            if (!isTargetBlock(o)) continue;
+            in.targets.push_back(toRect(o->getObjectRect()));
+            if (!reference) reference = o;
+        }
         if (in.targets.empty()) {
             notify("Select the blocks you want decorated", NotificationIcon::Error);
             return;
@@ -460,10 +481,11 @@ class $modify(DecoEditorUI, EditorUI) {
             return;
         }
 
+        auto offset = saveOffset(reference, m_editorLayer);
         auto created = CCArray::create();
         for (auto const& p : result.placements) {
             auto const& it = in.items[p.item];
-            auto str = rewrite(it.saveString, p.x, p.y, it.zOrder0 + p.zRank, p.rotDelta, keepGroups);
+            auto str = rewrite(it.saveString, p.x - offset.x, p.y - offset.y, it.zOrder0 + p.zRank, p.rotDelta, keepGroups);
             auto arr = m_editorLayer->createObjectsFromString(gd::string(str), true, true);
             if (!arr || arr->count() == 0) continue;
             auto obj = static_cast<GameObject*>(arr->objectAtIndex(0));
