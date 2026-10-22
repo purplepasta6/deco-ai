@@ -98,11 +98,11 @@ std::string cleanName(std::string s) {
 }
 
 std::string Style::summary() const {
-    int counts[5] = {};
+    int counts[6] = {};
     for (auto const& it : items)
         if (it.kit > 0) counts[static_cast<int>(it.role)]++;
     std::string s;
-    for (int r = 0; r < 5; ++r) {
+    for (int r = 0; r < 6; ++r) {
         if (!counts[r]) continue;
         if (!s.empty()) s += ", ";
         s += std::to_string(counts[r]) + " " + roleName(static_cast<Role>(r));
@@ -167,7 +167,8 @@ std::string Library::serialize() const {
                    "\t" + (it.axisAligned ? "1" : "0") + "\t" + num(it.normalOffset) + "\t" +
                    (it.autoOffset ? "1" : "0") + "\t" + num(it.offX) + "\t" + num(it.offY) + "\t" +
                    std::to_string(it.kit) + "\t" + std::to_string(it.seq) + "\t" + std::to_string(it.objectID) +
-                   "\t" + std::to_string(it.zOrder0) + "\t" + it.saveString + "\n";
+                   "\t" + std::to_string(it.zOrder0) + "\t" + it.saveString + "\t" + num(it.refW) + "\t" +
+                   num(it.refH) + "\n";
         }
         for (auto const& [id, c] : s.colors) {
             out += "C\t" + std::to_string(c.id) + "\t" + std::to_string(c.r) + "\t" + std::to_string(c.g) + "\t" +
@@ -217,7 +218,7 @@ Library Library::deserialize(std::string const& data) {
             } else if (f[0] == "I" && f.size() >= 17 && style) {
                 Item it;
                 int role = toI(f[1]);
-                if (role < 0 || role > 4) continue;
+                if (role < 0 || role > 5) continue;
                 it.role = static_cast<Role>(role);
                 it.designed = toI(f[2]) & 3;
                 it.bw = toD(f[3]);
@@ -234,6 +235,10 @@ Library Library::deserialize(std::string const& data) {
                 it.objectID = toI(f[14]);
                 it.zOrder0 = toI(f[15]);
                 it.saveString = f[16];
+                if (f.size() >= 19) {
+                    it.refW = std::max(1.0, toD(f[17]));
+                    it.refH = std::max(1.0, toD(f[18]));
+                }
                 if (it.saveString.empty() || it.bw <= 0 || it.bh <= 0) continue;
                 style->items.push_back(std::move(it));
             } else if (f[0] == "C" && f.size() >= 15 && style) {
@@ -306,6 +311,7 @@ int slotOf(Item const& it) {
         case Role::Corner: return 8 + (it.designed & 3);
         case Role::Interior: return 12;
         case Role::Large: return 13;
+        case Role::Fill: return 14;
     }
     return 12;
 }
@@ -329,8 +335,8 @@ std::vector<Item> consensusItems(std::vector<BlockExample> const& examples) {
     std::vector<Item> out;
     if (examples.empty()) return out;
 
-    // Edge slots: vote on the whole set of pieces in the slot.
-    for (int slot = 0; slot < 12; ++slot) {
+    // Edge, corner and fill slots: vote on the whole set of pieces in the slot.
+    for (int slot : {14, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}) {
         struct Cand { int count = 0; std::vector<Item> items; };
         std::map<std::string, Cand> cands;
         int empty = 0;
@@ -364,7 +370,8 @@ std::vector<Item> consensusItems(std::vector<BlockExample> const& examples) {
     for (auto const& ex : examples) {
         std::set<std::string> seenHere;
         for (auto const& it : ex.items) {
-            if (slotOf(it) < 12) continue;
+            int sl = slotOf(it);
+            if (sl != 12 && sl != 13) continue;
             auto k = itemKey(it);
             if (!seenHere.insert(k).second) continue;
             auto& e = pieces[k];

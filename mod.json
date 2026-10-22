@@ -8,11 +8,17 @@
 	},
 	"id": "purplepasta.deco-ai",
 	"name": "Deco AI",
-	"version": "v3.0.1",
+	"version": "v3.1.0",
 	"developer": "purplepasta",
 	"description": "Decorates your blocks the way creators do: clean outlines, corners, evenly spaced details. Fully offline.",
 	"tags": ["editor", "enhancement"],
 	"settings": {
+		"fills": {
+			"name": "Block fills",
+			"description": "Put the learned block fill (the block's base) on every selected block.",
+			"type": "bool",
+			"default": true
+		},
 		"outlines": {
 			"name": "Outlines",
 			"description": "Tile the outline style along every exposed edge.",

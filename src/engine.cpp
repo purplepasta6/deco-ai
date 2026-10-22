@@ -126,7 +126,8 @@ public:
         chooseKit();
 
         auto const& s = m_in.settings;
-        if (s.outlines) placeLines();
+        if (s.fills) placeFills();
+        if (s.outlines && !m_out.capped) placeLines();
         if (s.corners && !m_out.capped) placeCorners();
         if (s.edgeDetails && !m_out.capped) placeEdgeDetails();
         if (s.large && !m_out.capped) placeLarge();
@@ -147,7 +148,7 @@ private:
     std::unordered_map<int, std::unordered_map<Key, std::vector<std::pair<double, double>>>> m_existing;
 
     // chosen kit
-    std::vector<int> m_lines, m_cornerItems, m_edge, m_interior, m_large;
+    std::vector<int> m_fills, m_lines, m_cornerItems, m_edge, m_interior, m_large;
     bool m_edgeFromKit = false;
 
     // ---------------------------------------------------------------- setup
@@ -309,6 +310,7 @@ private:
             return loose;
         };
 
+        m_fills = collect(Role::Fill, 1);
         m_lines = collect(Role::Line, 1);
         // Loose lines that aren't axis aligned can't be tiled.
         std::erase_if(m_lines, [&](int i) { return !items[i].axisAligned; });
@@ -372,6 +374,29 @@ private:
         return allTouchedCells(r, [&](int i, int j) { return target(i, j) && depth(i, j) >= minDepth; });
     }
 
+    // ---------------------------------------------------------------- fills
+
+    // The block's base: placed on every selected block, scaled to its size.
+    void placeFills() {
+        if (m_fills.empty()) return;
+        for (auto const& r : m_in.targets) {
+            for (int idx : m_fills) {
+                auto const& it = m_in.items[idx];
+                double sx = r.w() / std::max(it.refW, 1.0), sy = r.h() / std::max(it.refH, 1.0);
+                double x = r.cx() + it.offX * sx, y = r.cy() + it.offY * sy;
+                bool swap = oddQuarter(it.rot0);
+                double px = swap ? sy : sx, py = swap ? sx : sy; // scale in the piece's own axes
+                Rect box = Rect::centered(x, y, it.bw * sx, it.bh * sy);
+                if (isDuplicate(it.objectID, x, y)) { m_out.stats.skippedDuplicate++; continue; }
+                if (!emit(idx, x, y, 0, 1, -4, box)) return;
+                auto& p = m_out.placements.back();
+                p.scaleX = std::abs(px - 1) < 1e-3 ? 1 : px;
+                p.scaleY = std::abs(py - 1) < 1e-3 ? 1 : py;
+                m_out.stats.fills++;
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- lines
 
     double lineHalfThickness(int side) const {
@@ -392,7 +417,7 @@ private:
                 double len0 = std::max(it.bw, it.bh);
                 double off = it.autoOffset ? 0 : it.normalOffset;
                 // Extend into outer corners so neighbouring edges meet without a notch.
-                double ext = std::max(0.0, off + thick / 2);
+                double ext = thick <= 6 ? std::max(0.0, off + thick / 2) : 0.0;
                 double a = run.start - (run.startOuter ? ext : 0);
                 double b = run.end + (run.endOuter ? ext : 0);
                 double L = b - a;
@@ -597,6 +622,7 @@ char const* roleName(Role r) {
         case Role::EdgeDetail: return "edge detail";
         case Role::Interior: return "detail";
         case Role::Large: return "large piece";
+        case Role::Fill: return "fill";
     }
     return "?";
 }
@@ -645,9 +671,51 @@ bool classifyLearned(Rect const& R, double bw, double bh, double rot0, double cx
     double dT = cy - R.y1, dB = R.y0 - cy, dL = R.x0 - cx, dR = cx - R.x1; // outward distances
     double outMost = std::max({dT, dB, dL, dR});
     if (outMost > 22) return false; // floating in the air: not part of the block design
+    double W = std::max(R.w(), 1.0), H = std::max(R.h(), 1.0);
 
-    // Corner: centred near a corner of the block and not elongated.
-    if (aspect < 2.5 && out.axisAligned) {
+    // Edge strip: spans (almost) a whole side and hugs that edge, like a glow
+    // band or a thick outline. Tiled along every exposed edge.
+    if (out.axisAligned) {
+        if (out.bw >= 0.8 * W && out.bh < out.bw && out.bh <= 0.7 * H) {
+            double t = std::abs(cy - R.y1), b = std::abs(cy - R.y0);
+            if (std::min(t, b) <= out.bh / 2 + 12) {
+                out.role = Role::Line;
+                out.designed = t <= b ? Top : Bottom;
+                out.normalOffset = out.designed == Top ? dT : dB;
+                return true;
+            }
+        }
+        if (out.bh >= 0.8 * H && out.bw < out.bh && out.bw <= 0.7 * W) {
+            double l = std::abs(cx - R.x0), r = std::abs(cx - R.x1);
+            if (std::min(l, r) <= out.bw / 2 + 12) {
+                out.role = Role::Line;
+                out.designed = l <= r ? Left : Right;
+                out.normalOffset = out.designed == Left ? dL : dR;
+                return true;
+            }
+        }
+    }
+
+    // Fill: covers most of the block and is centred on it (the block's base).
+    {
+        Rect pb = Rect::centered(cx, cy, out.bw, out.bh);
+        double ix = std::max(0.0, std::min(pb.x1, R.x1) - std::max(pb.x0, R.x0));
+        double iy = std::max(0.0, std::min(pb.y1, R.y1) - std::max(pb.y0, R.y0));
+        double cover = ix * iy / (W * H);
+        if (cover >= 0.6 && out.bw * out.bh <= 1.6 * W * H && std::abs(cx - R.cx()) <= 0.25 * W &&
+            std::abs(cy - R.cy()) <= 0.25 * H) {
+            out.role = Role::Fill;
+            out.designed = Top;
+            out.offX = cx - R.cx();
+            out.offY = cy - R.cy();
+            out.refW = W;
+            out.refH = H;
+            return true;
+        }
+    }
+
+    // Corner: centred near a corner of the block, small, and not elongated.
+    if (aspect < 2.5 && out.axisAligned && maxD <= 0.8 * std::min(W, H)) {
         double tol = std::clamp(minD * 0.5, 6.0, 15.0);
         double px[4] = {R.x0, R.x1, R.x1, R.x0};
         double py[4] = {R.y1, R.y1, R.y0, R.y0};

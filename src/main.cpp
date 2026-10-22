@@ -75,6 +75,9 @@ bool isGameplay(GameObject* o) {
 // Anything that deco can be learned around / applied to, other than plain blocks.
 bool isAnchor(GameObject* o) {
     if (o->m_isTrigger || isDeco(o) || isTargetBlock(o)) return false;
+    // Thin pieces with collision (outline-tab lines) are part of block designs,
+    // not objects to decorate around.
+    if (o->m_objectType == GameObjectType::Solid) return false;
     switch (o->m_objectType) {
         case GameObjectType::Modifier:
         case GameObjectType::EnterEffectObject:
@@ -759,22 +762,37 @@ class $modify(DecoEditorUI, EditorUI) {
         for (auto b : blocks) { auto r = anchorRect(b); owners.push_back({b, r, r.w() * r.h()}); }
         for (auto a : anchors) { auto r = anchorRect(a); owners.push_back({a, r, std::max(1.0, r.w() * r.h())}); }
 
+        // Blocks claim deco on and around them (up to 45 units away). Other
+        // objects (spikes, orbs...) only claim deco that actually touches them
+        // and isn't much bigger than they are, so ground and block deco next
+        // to a spike is never mistaken for the spike's own decoration.
         std::map<GameObject*, std::vector<GameObject*>> assigned;
         int air = 0;
         for (auto d : decos) {
             auto p = d->getPosition();
+            auto dbb = d->boundingBox();
+            double darea = std::max(1.0, static_cast<double>(dbb.size.width) * dbb.size.height);
             Owner const* best = nullptr;
             double bestDist = 1e18;
             for (auto const& o : owners) {
+                bool isBlock = isTargetBlock(o.obj);
                 double ddx = std::max({o.rect.x0 - p.x, 0.0, p.x - o.rect.x1});
                 double ddy = std::max({o.rect.y0 - p.y, 0.0, p.y - o.rect.y1});
                 double dist = std::sqrt(ddx * ddx + ddy * ddy);
+                if (isBlock) {
+                    if (dist > 45.0) continue;
+                } else {
+                    // Must touch: the piece's box overlaps the object's box (2 units of slack).
+                    bool touches = dbb.getMinX() <= o.rect.x1 + 2 && dbb.getMaxX() >= o.rect.x0 - 2 &&
+                                   dbb.getMinY() <= o.rect.y1 + 2 && dbb.getMaxY() >= o.rect.y0 - 2;
+                    if (!touches || darea > 4.0 * o.area) continue;
+                }
                 if (!best || dist < bestDist - 0.5 || (std::abs(dist - bestDist) <= 0.5 && o.area < best->area)) {
                     best = &o;
                     bestDist = dist;
                 }
             }
-            if (!best || bestDist > 45.0) { air++; continue; }
+            if (!best) { air++; continue; }
             assigned[best->obj].push_back(d);
         }
 
@@ -1021,6 +1039,7 @@ class $modify(DecoEditorUI, EditorUI) {
 
         auto mod = Mod::get();
         in.items = style.items;
+        in.settings.fills = mod->getSettingValue<bool>("fills");
         in.settings.outlines = mod->getSettingValue<bool>("outlines");
         in.settings.corners = mod->getSettingValue<bool>("corners");
         in.settings.edgeDetails = mod->getSettingValue<bool>("edge-details");
@@ -1124,6 +1143,10 @@ class $modify(DecoEditorUI, EditorUI) {
                 o.zOrder = it.zOrder0 + p.zRank;
                 o.rotDelta = p.rotDelta;
                 auto obj = spawn(rewrite(it.saveString, o, keepGroups), 1.0);
+                if (obj && (std::abs(p.scaleX - 1.0) > 0.005 || std::abs(p.scaleY - 1.0) > 0.005)) {
+                    obj->updateCustomScaleX(obj->m_scaleX * static_cast<float>(p.scaleX));
+                    obj->updateCustomScaleY(obj->m_scaleY * static_cast<float>(p.scaleY));
+                }
                 if (obj && std::abs(p.scaleLong - 1.0) > 0.005) {
                     if (it.longIsLocalX) obj->updateCustomScaleX(obj->m_scaleX * static_cast<float>(p.scaleLong));
                     else obj->updateCustomScaleY(obj->m_scaleY * static_cast<float>(p.scaleLong));
@@ -1211,6 +1234,7 @@ class $modify(DecoEditorUI, EditorUI) {
             if (!parts.empty()) parts += ", ";
             parts += fmt::format("{} {}", n, what);
         };
+        add(st.fills, "fill");
         add(st.lines, "outline");
         add(st.corners, "corner");
         add(st.edgeDetails, "edge");

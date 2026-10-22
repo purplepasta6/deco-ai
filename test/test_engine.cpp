@@ -233,6 +233,45 @@ int main(int argc, char** argv) {
     }
 
     {
+        // Pieces from the real style that went wrong in-game (block at 0..30).
+        std::printf("== real pieces\n");
+        Rect R = block(0, 0);
+        Item fill, glowIn, glowOut, line, corner;
+        // 211: 30x30 square centred on the block = the block's fill (was misread as a corner).
+        CHECK(classifyLearned(R, 30, 30, 0, 15, 15, fill) && fill.role == Role::Fill, "30x30 centred square is a fill");
+        // 503: 30x20 glow inside the bottom of the block = bottom strip.
+        CHECK(classifyLearned(R, 30, 20, 0, 15, 10, glowIn) && glowIn.role == Role::Line && glowIn.designed == Bottom,
+              "30x20 glow inside the bottom is a bottom strip");
+        // 503: 30x20 glow hanging 20 below the block = bottom strip outside (was a lone detail).
+        CHECK(classifyLearned(R, 30, 20, 0, 15, -20, glowOut) && glowOut.role == Role::Line &&
+              glowOut.designed == Bottom && std::abs(glowOut.normalOffset - 20) < 1e-6,
+              "30x20 glow below the block is a bottom strip");
+        // A real 10x10 corner cap still is one.
+        CHECK(classifyLearned(R, 10, 10, 0, 0, 30, corner) && corner.role == Role::Corner, "small corner cap kept");
+        // A thin top line still is one.
+        CHECK(classifyLearned(R, 30, 2, 0, 15, 30, line) && line.role == Role::Line && line.designed == Top, "top line kept");
+
+        // Fill goes on every selected block, scaled for a half block.
+        Input in;
+        in.solids = {block(0, 0), block(1, 0), {60, 0, 90, 15}};
+        in.targets = in.solids;
+        fill.kit = 1;
+        fill.objectID = 211;
+        in.items = {fill};
+        Result r = generate(in);
+        CHECK(r.stats.fills == 3, "fill on each of 3 blocks (got %d)", r.stats.fills);
+        bool halfOk = false;
+        for (auto const& p : r.placements)
+            if (std::abs(p.x - 75) < 1e-6 && std::abs(p.y - 7.5) < 1e-6 && std::abs(p.scaleY - 0.5) < 1e-6 &&
+                std::abs(p.scaleX - 1) < 1e-6) halfOk = true;
+        CHECK(halfOk, "half block gets a half-height fill centred on it");
+        // Idempotent.
+        Input again = in;
+        for (auto const& p : r.placements) again.existing.push_back({211, p.x, p.y});
+        CHECK(generate(again).placements.empty(), "fills not duplicated on a second run");
+    }
+
+    {
         // Partial selection: only the first 5 ground blocks. The border with the
         // unselected 6th block is not a real edge, so no vertical outline there.
         std::printf("== partial selection\n");

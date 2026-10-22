@@ -42,6 +42,7 @@ enum class Role : int {
     EdgeDetail = 2, // placed just inside an edge, in an even rhythm
     Interior = 3,   // small, quiet detail deep inside a block mass
     Large = 4,      // big piece, only where it fits fully inside a block mass
+    Fill = 5,       // covers the block itself (the block's base); goes on every block
 };
 
 char const* roleName(Role r);
@@ -55,7 +56,8 @@ struct Item {
     bool axisAligned = true; // rotation is a multiple of 90 degrees
     double normalOffset = 0; // Line/EdgeDetail: distance from the edge line, outward positive
     bool autoOffset = true;  // loose pieces: engine picks the offset (centred line / inset detail)
-    double offX = 0, offY = 0; // Corner: offset of its centre from the corner point
+    double offX = 0, offY = 0; // Corner: offset from the corner point; Fill: offset from the block centre
+    double refW = 30, refH = 30; // Fill: size of the example block it was learned on
     int kit = 0;             // 0 = loose palette piece, >0 = learned example it came from
     int seq = 0;             // insertion order (newer = larger)
     int objectID = 0;
@@ -64,6 +66,7 @@ struct Item {
 };
 
 struct Settings {
+    bool fills = true;
     bool outlines = true;
     bool corners = true;
     bool edgeDetails = true;
@@ -96,12 +99,13 @@ struct Placement {
     double x = 0, y = 0;     // final centre
     double rotDelta = 0;     // rotation to add to the piece's own rotation
     double scaleLong = 1;    // stretch factor along the piece's long local axis
+    double scaleX = 1, scaleY = 1; // extra scale (fills on half blocks and scaled blocks)
     int zRank = 0;           // added to the piece's own Z order
     Rect bbox;
 };
 
 struct Stats {
-    int lines = 0, corners = 0, edgeDetails = 0, interior = 0, large = 0;
+    int fills = 0, lines = 0, corners = 0, edgeDetails = 0, interior = 0, large = 0;
     int skippedOverlap = 0, skippedDuplicate = 0;
 };
 
