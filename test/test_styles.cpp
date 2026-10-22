@@ -94,6 +94,48 @@ int main() {
     mergeLearnedItems(into, {other});
     CHECK(into.size() == 2, "different offset kept");
 
+    // Consensus over many example blocks.
+    {
+        auto mk = [](Role role, int side, int id, double off = 0) {
+            Item x;
+            x.role = role;
+            x.designed = side;
+            x.objectID = id;
+            x.normalOffset = off;
+            x.bw = 30; x.bh = 3;
+            x.kit = 1;
+            x.saveString = "1," + std::to_string(id);
+            return x;
+        };
+        std::vector<BlockExample> exs;
+        for (int i = 0; i < 10; ++i) {
+            BlockExample ex;
+            // Top outline: 7 blocks use A, 3 use B. Only one may survive.
+            ex.items.push_back(mk(Role::Line, Top, i < 7 ? 100 : 101));
+            // Corner TL on every block.
+            ex.items.push_back(mk(Role::Corner, TopLeft, 300));
+            // Bottom detail on only 2 blocks: most leave the bottom empty.
+            if (i < 2) ex.items.push_back(mk(Role::EdgeDetail, Bottom, 400));
+            // Half the blocks have their right side hidden by a neighbour, with
+            // a piece there that must not be learned as a right outline.
+            if (i % 2) {
+                ex.exposed[Right] = false;
+                ex.items.push_back(mk(Role::Line, Right, 500));
+            }
+            exs.push_back(ex);
+        }
+        auto res = consensusItems(exs);
+        int a100 = 0, a101 = 0, c300 = 0, d400 = 0, r500 = 0;
+        for (auto const& x : res) {
+            a100 += x.objectID == 100; a101 += x.objectID == 101; c300 += x.objectID == 300;
+            d400 += x.objectID == 400; r500 += x.objectID == 500;
+        }
+        CHECK(a100 == 1 && a101 == 0, "majority outline only");
+        CHECK(c300 == 1, "corner kept once");
+        CHECK(d400 == 0, "rare bottom detail dropped");
+        CHECK(r500 == 0, "hidden-side piece dropped");
+    }
+
     lib.remove(aId);
     CHECK(lib.styles.size() == 1 && lib.activeId == bId, "remove switches active");
 

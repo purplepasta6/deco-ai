@@ -781,14 +781,31 @@ class $modify(DecoEditorUI, EditorUI) {
         auto& style = activeStyle();
         int styleId = style.id;
 
-        // Blocks: edge-aware pieces.
-        std::vector<deco::Item> learnedItems;
-        int blockExamples = 0;
+        // Blocks: edge-aware pieces, combined across all example blocks so the
+        // most common design per side and corner wins (no stacking variants).
+        std::vector<deco::Rect> levelSolids;
+        for (auto o : CCArrayExt<GameObject*>(m_editorLayer->m_objects))
+            if (isSolidLike(o)) levelSolids.push_back(toRect(o->getObjectRect()));
+        auto covered = [&](deco::Rect const& probe, GameObject* self) {
+            auto selfRect = toRect(self->getObjectRect());
+            for (auto const& r : levelSolids) {
+                if (std::abs(r.x0 - selfRect.x0) < 0.01 && std::abs(r.y0 - selfRect.y0) < 0.01 &&
+                    std::abs(r.x1 - selfRect.x1) < 0.01 && std::abs(r.y1 - selfRect.y1) < 0.01) continue;
+                if (r.overlaps(probe)) return true;
+            }
+            return false;
+        };
+        std::vector<deco::BlockExample> examples;
         for (auto b : blocks) {
             auto it = assigned.find(b);
             if (it == assigned.end()) continue;
-            blockExamples++;
             auto rect = toRect(b->getObjectRect());
+            deco::BlockExample ex;
+            double mx = rect.w() * 0.25, my = rect.h() * 0.25;
+            ex.exposed[deco::Top] = !covered({rect.x0 + mx, rect.y1 + 1, rect.x1 - mx, rect.y1 + 3}, b);
+            ex.exposed[deco::Bottom] = !covered({rect.x0 + mx, rect.y0 - 3, rect.x1 - mx, rect.y0 - 1}, b);
+            ex.exposed[deco::Left] = !covered({rect.x0 - 3, rect.y0 + my, rect.x0 - 1, rect.y1 - my}, b);
+            ex.exposed[deco::Right] = !covered({rect.x1 + 1, rect.y0 + my, rect.x1 + 3, rect.y1 - my}, b);
             for (auto d : it->second) {
                 auto bb = d->boundingBox();
                 auto p = d->getPosition();
@@ -803,9 +820,12 @@ class $modify(DecoEditorUI, EditorUI) {
                 item.saveString = clean(std::string(d->getSaveString(m_editorLayer)));
                 item.seq = g_lib.nextSeq++;
                 item.kit = 1;
-                learnedItems.push_back(std::move(item));
+                ex.items.push_back(std::move(item));
             }
+            examples.push_back(std::move(ex));
         }
+        int blockExamples = static_cast<int>(examples.size());
+        std::vector<deco::Item> learnedItems = deco::consensusItems(examples);
         if (!learnedItems.empty()) {
             // A new block example replaces the style's previous block design.
             std::erase_if(style.items, [](deco::Item const& it) { return it.kit > 0; });

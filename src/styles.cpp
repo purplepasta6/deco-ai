@@ -297,6 +297,93 @@ Library Library::deserialize(std::string const& data) {
     return lib;
 }
 
+namespace {
+
+int slotOf(Item const& it) {
+    switch (it.role) {
+        case Role::Line: return 0 + (it.designed & 3);
+        case Role::EdgeDetail: return 4 + (it.designed & 3);
+        case Role::Corner: return 8 + (it.designed & 3);
+        case Role::Interior: return 12;
+        case Role::Large: return 13;
+    }
+    return 12;
+}
+
+bool slotExposed(BlockExample const& ex, int slot) {
+    if (slot < 8) return ex.exposed[slot & 3];
+    if (slot < 12) {
+        switch (slot - 8) {
+            case TopLeft: return ex.exposed[Top] && ex.exposed[Left];
+            case TopRight: return ex.exposed[Top] && ex.exposed[Right];
+            case BottomRight: return ex.exposed[Bottom] && ex.exposed[Right];
+            default: return ex.exposed[Bottom] && ex.exposed[Left];
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+std::vector<Item> consensusItems(std::vector<BlockExample> const& examples) {
+    std::vector<Item> out;
+    if (examples.empty()) return out;
+
+    // Edge slots: vote on the whole set of pieces in the slot.
+    for (int slot = 0; slot < 12; ++slot) {
+        struct Cand { int count = 0; std::vector<Item> items; };
+        std::map<std::string, Cand> cands;
+        int empty = 0;
+        for (auto const& ex : examples) {
+            if (!slotExposed(ex, slot)) continue;
+            std::vector<Item> here;
+            for (auto const& it : ex.items)
+                if (slotOf(it) == slot) here.push_back(it);
+            if (here.empty()) { empty++; continue; }
+            std::vector<std::string> keys;
+            for (auto const& it : here) keys.push_back(itemKey(it));
+            std::sort(keys.begin(), keys.end());
+            std::string sig;
+            for (auto const& k : keys) sig += k + ";";
+            auto& c = cands[sig];
+            if (c.count++ == 0) c.items = here;
+        }
+        std::vector<Cand const*> ranked;
+        for (auto const& [sig, c] : cands) ranked.push_back(&c);
+        std::stable_sort(ranked.begin(), ranked.end(), [](Cand const* a, Cand const* b) { return a->count > b->count; });
+        if (ranked.empty() || ranked[0]->count < empty) continue; // most blocks leave this slot empty
+        for (auto const& it : ranked[0]->items) out.push_back(it);
+        // Edge details may alternate between the two most common designs.
+        bool isDetail = slot >= 4 && slot < 8;
+        if (isDetail && ranked.size() > 1 && ranked[1]->count >= std::max(2, ranked[0]->count / 3))
+            for (auto const& it : ranked[1]->items) out.push_back(it);
+    }
+
+    // Interior and large pieces: keep individual pieces that recur.
+    std::map<std::string, std::pair<int, Item>> pieces;
+    for (auto const& ex : examples) {
+        std::set<std::string> seenHere;
+        for (auto const& it : ex.items) {
+            if (slotOf(it) < 12) continue;
+            auto k = itemKey(it);
+            if (!seenHere.insert(k).second) continue;
+            auto& e = pieces[k];
+            if (e.first++ == 0) e.second = it;
+        }
+    }
+    std::vector<std::pair<int, Item>> ranked;
+    for (auto const& [k, e] : pieces) ranked.push_back(e);
+    std::stable_sort(ranked.begin(), ranked.end(), [](auto const& a, auto const& b) { return a.first > b.first; });
+    int need = std::max(1, static_cast<int>(std::ceil(examples.size() * 0.2)));
+    int kept = 0;
+    for (auto const& [count, it] : ranked) {
+        if (count < need || kept >= 3) break;
+        out.push_back(it);
+        kept++;
+    }
+    return out;
+}
+
 void mergeLearnedItems(std::vector<Item>& into, std::vector<Item> const& learned) {
     std::set<std::string> seen;
     for (auto const& it : into) seen.insert(itemKey(it));

@@ -65,6 +65,19 @@ struct Library {
 // is kept once, so copying a whole decorated section works.
 void mergeLearnedItems(std::vector<Item>& into, std::vector<Item> const& learned);
 
+// One decorated example block: which of its sides were visible in the
+// example level, and the pieces classified around it.
+struct BlockExample {
+    bool exposed[4] = {true, true, true, true}; // Top, Right, Bottom, Left
+    std::vector<Item> items;
+};
+
+// Combine many example blocks into one consistent design: for every slot
+// (each side's outline, each corner, each side's details) the most common
+// design wins, pieces on hidden sides are ignored, and a slot most blocks
+// leave empty stays empty. Interior pieces are kept if they recur.
+std::vector<Item> consensusItems(std::vector<BlockExample> const& examples);
+
 std::string cleanName(std::string s);
 
 } // namespace deco
